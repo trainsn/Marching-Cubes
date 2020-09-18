@@ -1,7 +1,7 @@
 #ifndef GRIDPOINT_H
 #define GRIDPOINT_H
 
-class GridPoint
+struct GridPoint
 {
 public:
 	float x, y, z, value, normal_x, normal_y, normal_z;

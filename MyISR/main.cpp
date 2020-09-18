@@ -44,9 +44,6 @@ unsigned int isosurfaceVertexPositionBuffer;
 unsigned int isosurfaceVertexNormalBuffer;
 unsigned int isosurfaceVertexColorBuffer;
 
-// A stack for preserving matrix transformation states.
-stack<glm::mat4> mvMatrixStack;
-
 glm::mat4 pMatrix;
 glm::mat4 mvMatrix;
 glm::mat3 normalMatrix;
@@ -88,7 +85,7 @@ float point_light_phi_step1 = 0.3;
 
 unsigned int initVol(const char *filename, unsigned int w, unsigned int h, unsigned int d){
 	FILE *fp;
-	size_t size = w * h*d;
+	size_t size = w * h * d;
 	uint8_t *data = new uint8_t[size];	// 8 bit
 	if (!(fp = fopen(filename, "rb"))) {
 		cout << "Error: opening .raw file failed" << endl;
@@ -130,42 +127,44 @@ unsigned int initVol(const char *filename, unsigned int w, unsigned int h, unsig
 				float y = j / (float)vol.max_dim;
 				float x = i / (float)vol.max_dim;
 				float value = (float)data[idx];
-				vol.grids[k][j][i] = GridPoint(x, y, z, value);					
+				vol.grids[idx] = GridPoint(x, y, z, value);					
 			}
 		}
 	}
-
+	
+	#pragma omp parallel for
 	for (int k = 0; k < d; k++) {
 		for (int j = 0; j < h; j++) {
 			for (int i = 0; i < w; i++) {
+				int idx = k * h * w + j * w + i;
 				if (k == 0) {
-					vol.grids[k][j][i].normal_z = (vol.grids[k + 1][j][i].value - vol.grids[k][j][i].value);
+					vol.grids[idx].normal_z = (vol.grids[idx + h * w].value - vol.grids[idx].value);
 				}
 				else if (k == d - 1) {
-					vol.grids[k][j][i].normal_z = (vol.grids[k][j][i].value - vol.grids[k - 1][j][i].value);
+					vol.grids[idx].normal_z = (vol.grids[idx].value - vol.grids[idx - h * w].value);
 				}
 				else {
-					vol.grids[k][j][i].normal_z = 0.5 * (vol.grids[k + 1][j][i].value - vol.grids[k - 1][j][i].value);
+					vol.grids[idx].normal_z = 0.5 * (vol.grids[idx + h * w].value - vol.grids[idx - h * w].value);
 				}
 
 				if (j == 0) {
-					vol.grids[k][j][i].normal_y = (vol.grids[k][j + 1][i].value - vol.grids[k][j][i].value);
+					vol.grids[idx].normal_y = (vol.grids[idx + w].value - vol.grids[idx].value);
 				}
 				else if (j == h - 1) {
-					vol.grids[k][j][i].normal_y = (vol.grids[k][j][i].value - vol.grids[k][j - 1][i].value);
+					vol.grids[idx].normal_y = (vol.grids[idx].value - vol.grids[idx - w].value);
 				}
 				else {
-					vol.grids[k][j][i].normal_y = 0.5 * (vol.grids[k][j + 1][i].value - vol.grids[k][j - 1][i].value);
+					vol.grids[idx].normal_y = 0.5 * (vol.grids[idx + w].value - vol.grids[idx - w].value);
 				}
 
 				if (i == 0) {
-					vol.grids[k][j][i].normal_x = (vol.grids[k][j][i + 1].value - vol.grids[k][j][i].value);
+					vol.grids[idx].normal_x = (vol.grids[idx + 1].value - vol.grids[idx].value);
 				}
 				else if (i == w - 1) {
-					vol.grids[k][j][i].normal_x = (vol.grids[k][j][i].value - vol.grids[k][j][i - 1].value);
+					vol.grids[idx].normal_x = (vol.grids[idx].value - vol.grids[idx - 1].value);
 				}
 				else {
-					vol.grids[k][j][i].normal_x = 0.5 * (vol.grids[k][j][i + 1].value - vol.grids[k][j][i - 1].value);
+					vol.grids[idx].normal_x = 0.5 * (vol.grids[idx + 1].value - vol.grids[idx - 1].value);
 				}
 			}
 		}
@@ -300,15 +299,16 @@ void marching_cubes(int w, int h, int d, float iso_level, bool invert_normals) {
 				// | /       | /
 				// |/        |/
 				// 3---------2
-				GridPoint cube_v3 = vol.grids[k][j][i]; // Lower left  front corner.
-				GridPoint cube_v2 = vol.grids[k][j][i + 1]; // Lower right front corner.
-				GridPoint cube_v6 = vol.grids[k][j + 1][i + 1]; // Upper right front corner.
-				GridPoint cube_v7 = vol.grids[k][j + 1][i]; // Upper left  front corner.
+				int idx = k * h * w + j * w + i;
+				GridPoint cube_v3 = vol.grids[idx]; // Lower left  front corner. [k][j][i]
+				GridPoint cube_v2 = vol.grids[idx + 1]; // Lower right front corner. [k][j][i + 1]
+				GridPoint cube_v6 = vol.grids[idx + w + 1]; // Upper right front corner. [k][j + 1][i + 1]
+				GridPoint cube_v7 = vol.grids[idx + w]; // Upper left  front corner. [k][j + 1][i]
 
-				GridPoint cube_v0 = vol.grids[k + 1][j][i]; // Lower left  back corner.
-				GridPoint cube_v1 = vol.grids[k + 1][j][i + 1]; // Lower right back corner.
-				GridPoint cube_v5 = vol.grids[k + 1][j + 1][i + 1]; // Upper right back corner.
-				GridPoint cube_v4 = vol.grids[k + 1][j + 1][i]; // Upper left  back corner.
+				GridPoint cube_v0 = vol.grids[idx + h * w]; // Lower left  back corner. [k + 1][j][i]
+				GridPoint cube_v1 = vol.grids[idx + h * w + 1]; // Lower right back corner. [k + 1][j][i + 1]
+				GridPoint cube_v5 = vol.grids[idx + h * w + w + 1]; // Upper right back corner. [k + 1][j + 1][i + 1]
+				GridPoint cube_v4 = vol.grids[idx + h * w + w]; // Upper left  back corner. [k + 1][j + 1][i]
 
 				int cube_index = 0;
 

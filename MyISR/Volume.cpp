@@ -19,11 +19,5 @@ Volume::Volume(int w, int h, int d)
 	this->ySize_norm = this->ySize / (float)max_dim;
 	this->zSize_norm = this->zSize / (float)max_dim;
 
-	this->grids.resize(d);
-	for (int i = 0; i < d; i++) {
-		this->grids[i].resize(h);
-		for (int j = 0; j < h; j++) {
-			this->grids[i][j].resize(w);
-		}
-	}
+	this->grids.resize(w * h * d);
 }
